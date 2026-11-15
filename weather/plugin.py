@@ -40,4 +40,6 @@ spec = PluginSpec(
     # wake the app when it's stopped.
     lifecycle=LIFECYCLE_ON_DEMAND,
     memory_mb=96,
+    # Refresh the tile's temperature a few times a day while asleep.
+    wake_every=3 * 3600,
 )
