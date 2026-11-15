@@ -11,19 +11,3 @@ jobs:
     uses: blackdiamondlodge/bdh-sdk/.github/workflows/app-ci.yml@v0
     with:
       app_id: weather
-
-  container-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: pip install build && python -m build --wheel
-      - run: sh scripts/container_smoke.sh dist/*.whl
-        env:
-          SMOKE_APP: weather
-          SMOKE_PATHS: /weather/
-          SMOKE_BROKER_SETTINGS: >-
-            {"hub.location": {"name": "Sun Peaks", "latitude": 50.88, "longitude": -119.9,
-            "timezone": "America/Vancouver"}, "hub.units": "metric"}

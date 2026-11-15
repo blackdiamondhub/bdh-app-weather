@@ -161,7 +161,7 @@ class BrokerTests(TestCase):
         self.assertIsNone(location())
         self.assertEqual(place_name(), "Lodge")
         self.assertEqual(default_units(), "metric")
-        self.assertEqual(wa.get_alerts(), [])
+        self.assertEqual(wa.get_alerts(NOW), [])
 
 
 @patch("weather.views.get_alerts", return_value=[])

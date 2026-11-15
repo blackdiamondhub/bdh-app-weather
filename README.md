@@ -40,6 +40,5 @@ can't answer, the page shows its no-location state in metric rather than failing
 In the container, settings come from the hub (Settings page or site config) through the broker;
 `BDH_WEATHER_*` environment variables on the hub are not visible to the app.
 
-`scripts/container_smoke.sh` (run in CI) installs the wheel into an image derived from the hub's
-app runtime, starts it read-only under the memory limit next to a stand-in broker that answers
-the hub's location, checks `/_bdh/health` and the page, and prints its memory use.
+CI's `image` job (from bdh-sdk's `app-ci.yml`) locks the dependencies against the hub's app
+runtime, builds the app's image and smoke-tests it the way the supervisor runs it.
