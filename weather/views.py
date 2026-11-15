@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from django.shortcuts import render
 
-from bdh_sdk.units import system
+from bdh_sdk.rpc import BrokerError
+from bdh_sdk.units import METRIC, system
 
 from .alerts import get_alerts
 from .forecast import EFFECTS, describe, get_weather, place_name, weather_effect
@@ -18,7 +19,10 @@ def utc_now():
 
 def default_units():
     """The hub's units (its °C/°F switch); the page's own toggle only changes the view."""
-    return system()
+    try:
+        return system()
+    except BrokerError:
+        return METRIC
 
 
 class Units:

@@ -1,4 +1,5 @@
 from bdh_sdk import PluginSpec, Setting, Tile
+from bdh_sdk.plugins import LIFECYCLE_ON_DEMAND, NETWORK_OUTBOUND
 from bdh_sdk.provides import STATS
 
 STAT_KEYS = (
@@ -30,4 +31,13 @@ spec = PluginSpec(
         Setting("place", "Place name", default="",
                 help="Shown on the Now card. Defaults to the city in Settings > General."),
     ),
+    api_version=2,
+    # Only reads its own setting and the hub's location/units (open to every app).
+    permissions=(),
+    # Fetches Open-Meteo, Environment Canada and NWS.
+    network=NETWORK_OUTBOUND,
+    # Forecasts are fetched on request and cached; the hub's status/stats hooks
+    # wake the app when it's stopped.
+    lifecycle=LIFECYCLE_ON_DEMAND,
+    memory_mb=96,
 )

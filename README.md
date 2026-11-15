@@ -28,3 +28,17 @@ changes what that visit shows.
 
 Preview a background with `?wx=` (`sun`, `stars`, `partly`, `clouds`, `fog`, `drizzle`, `rain`,
 `snow`, `storm`).
+
+## Container (hub API 2)
+
+Since 2.0.0 the app runs in its own container: no broker permissions (it reads only its own
+setting and the hub's location and units, which every app may read), `network: outbound`
+(Open-Meteo, Environment Canada, NWS), `lifecycle: on_demand`, `memory_mb: 96`. The hub pulls the
+status tile and the `stats` provider from the container, waking it if it's stopped. If the broker
+can't answer, the page shows its no-location state in metric rather than failing.
+
+In the container, settings come from the hub (Settings page or site config) through the broker;
+`BDH_WEATHER_*` environment variables on the hub are not visible to the app.
+
+CI's `image` job (from bdh-sdk's `app-ci.yml`) locks the dependencies against the hub's app
+runtime, builds the app's image and smoke-tests it the way the supervisor runs it.
