@@ -12,6 +12,7 @@ import requests
 from django.core.cache import cache
 
 from bdh_sdk.location import location as hub_location
+from bdh_sdk.rpc import BrokerError
 
 log = logging.getLogger(__name__)
 
@@ -170,7 +171,11 @@ def sources(country):
 
 def get_alerts(now):
     """Active alerts for the hub's location, most severe first (cached); [] when there are none or on errors."""
-    where = hub_location()
+    try:
+        where = hub_location()
+    except BrokerError as exc:
+        log.warning("hub location unavailable: %s", exc)
+        return []
     if not where or not where.has_coordinates:
         return []
     lat, lon = round(where.latitude, 3), round(where.longitude, 3)

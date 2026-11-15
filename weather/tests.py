@@ -120,6 +120,49 @@ class LocationTests(TestCase):
         with self.at(None):
             self.assertIsNone(location())
 
+class ManifestTests(TestCase):
+    def test_hub_api_2_manifest(self):
+        from weather.plugin import spec
+        m = spec.manifest()
+        self.assertEqual(m["api_version"], 2)
+        self.assertEqual(m["permissions"], [])
+        self.assertEqual((m["network"], m["lifecycle"], m["memory_mb"]), ("outbound", "on_demand", 96))
+
+
+class BrokerTests(TestCase):
+    """In its container the app reads the hub's location and units from the broker."""
+
+    def setUp(self):
+        from bdh_sdk import settings
+        from bdh_sdk.testing import FakeBroker
+
+        saved = settings._store
+        self.broker = FakeBroker(grants=("settings.get",), install=True)
+        self.broker.start()
+        self.addCleanup(settings.set_store, saved)
+        self.addCleanup(self.broker.stop)
+
+    @override_settings(HUB_BRAND={"name": "Hub", "subtitle": ""})
+    def test_location_and_units_from_hub(self):
+        self.broker.settings.update({
+            ("hub", "location"): {"name": "Sun Peaks", "latitude": 50.88, "longitude": -119.9,
+                                  "timezone": "America/Vancouver"},
+            ("hub", "units"): "imperial",
+        })
+        from weather.views import default_units
+        self.assertEqual(location(), (50.88, -119.9))
+        self.assertEqual(place_name(), "Sun Peaks")
+        self.assertEqual(default_units(), "imperial")
+
+    @override_settings(HUB_BRAND={"name": "Hub", "subtitle": "Lodge"})
+    def test_broker_refusal_degrades(self):
+        self.broker.grants = []
+        from weather.views import default_units
+        self.assertIsNone(location())
+        self.assertEqual(place_name(), "Lodge")
+        self.assertEqual(default_units(), "metric")
+        self.assertEqual(wa.get_alerts(), [])
+
 
 @patch("weather.views.get_alerts", return_value=[])
 @patch("weather.views.utc_now", return_value=NOW)

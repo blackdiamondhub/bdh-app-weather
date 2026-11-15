@@ -2,10 +2,11 @@
 import logging
 
 import requests
-from django.conf import settings
 from django.core.cache import cache
 
+from bdh_sdk.branding import brand
 from bdh_sdk.location import location as hub_location
+from bdh_sdk.rpc import BrokerError
 from bdh_sdk.settings import app_setting
 
 log = logging.getLogger(__name__)
@@ -83,9 +84,18 @@ def describe(code, is_day=True):
     return (icon if is_day else NIGHT_ICONS.get(icon, icon)), label
 
 
+def hub_where():
+    """The hub's Location, or None (also when a container app's broker can't say)."""
+    try:
+        return hub_location()
+    except BrokerError as exc:
+        log.warning("hub location unavailable: %s", exc)
+        return None
+
+
 def location():
     """(latitude, longitude) of the hub's location (Settings > General), or None."""
-    where = hub_location()
+    where = hub_where()
     if not where or not where.has_coordinates:
         return None
     return round(where.latitude, 3), round(where.longitude, 3)
@@ -93,10 +103,13 @@ def location():
 
 def place_name():
     """Heading for the Now card: the place setting, else the hub's city, else the brand subtitle or name."""
-    where = hub_location()
-    brand = getattr(settings, "HUB_BRAND", None) or {}
-    return (app_setting("weather", "place", "") or (where.name if where else "")
-            or brand.get("subtitle") or brand.get("name") or "Weather")
+    where = hub_where()
+    try:
+        place = app_setting("weather", "place", "")
+    except BrokerError:
+        place = ""
+    hub = brand()
+    return place or (where.name if where else "") or hub["subtitle"] or hub["name"] or "Weather"
 
 
 def _air_quality(lat, lon):
