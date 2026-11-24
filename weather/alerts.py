@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 ECCC_URL = "https://api.weather.gc.ca/collections/weather-alerts/items"
 NWS_URL = "https://api.weather.gov/alerts/active"
-USER_AGENT = "bdh-app-weather (https://github.com/blackdiamondlodge/bdh-app-weather)"
+USER_AGENT = "bdh-app-weather (https://github.com/blackdiamondhub/bdh-app-weather)"
 CACHE_TTL = 5 * 60
 NEAR = 0.01  # degrees around the hub for Environment Canada's bbox query
 

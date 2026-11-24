@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.urls]
-Source = "https://github.com/blackdiamondlodge/bdh-app-weather"
+Source = "https://github.com/blackdiamondhub/bdh-app-weather"
 
 [project.entry-points."blackdiamondhub.plugins"]
 weather = "weather.plugin:spec"

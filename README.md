@@ -1,6 +1,6 @@
 # bdh-app-weather
 
-A [Black Diamond Hub](https://github.com/blackdiamondlodge/BlackDiamondHub) app: weather for
+A [Black Diamond Hub](https://github.com/blackdiamondhub/BlackDiamondHub) app: weather for
 any location. Current conditions with an animated background, wind, humidity, air quality, UV,
 sunrise/sunset, a swipeable 24-hour strip and a 7-day forecast. Data is from
 [Open-Meteo](https://open-meteo.com/) (no API key), cached for 15 minutes; the page refreshes
