@@ -17,6 +17,9 @@ spec = PluginSpec(
     status="weather.homepage.status",
     provides={STATS: "weather.provides.stats"},
     stat_keys=STAT_KEYS,
+    # Read-only weather lookups for the hub's assistant, in every mode.
+    tools="weather.assistant.tools",
+    run_tool="weather.assistant.run_tool",
     tiles=(
         Tile(
             title="Weather",
