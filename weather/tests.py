@@ -426,3 +426,190 @@ class HourlySwipeTest(StaticLiveServerTestCase):
         self.browser.execute_script("var s = document.getElementById('wa-hours'); s.scrollLeft = s.scrollWidth;")
         WebDriverWait(self.browser, 5).until(lambda d: "hidden" in edge("r"), "right edge should hide at the end")
         self.assertNotIn("hidden", edge("l"))
+
+
+# 2026-01-10 15:20 at the lodge (UTC-7, a Saturday).
+LODGE_NOW = datetime(2026, 1, 10, 22, 20, tzinfo=timezone.utc)
+SNOWY = set(range(21, 28))  # 9 pm Saturday to 3 am Sunday, 1 cm an hour
+
+
+def lodge_payload():
+    hours = [datetime(2026, 1, 10) + timedelta(hours=i) for i in range(72)]
+    return {"forecast": {
+        "utc_offset_seconds": -7 * 3600,
+        "current": {"time": "2026-01-10T15:15", "temperature_2m": -3.4, "apparent_temperature": -9.6,
+                    "relative_humidity_2m": 74, "is_day": 1, "weather_code": 3, "wind_speed_10m": 14.0,
+                    "wind_gusts_10m": 31.0, "wind_direction_10m": 230, "precipitation": 0},
+        "hourly": {
+            "time": [h.strftime("%Y-%m-%dT%H:%M") for h in hours],
+            "temperature_2m": [-2.0 - abs(h.hour - 14) * 0.5 for h in hours],
+            "apparent_temperature": [-8.0 - abs(h.hour - 14) * 0.5 for h in hours],
+            "weather_code": [73 if i in SNOWY else 3 for i in range(72)],
+            "precipitation_probability": [80 if i in SNOWY else 20 for i in range(72)],
+            "is_day": [1 if 8 <= h.hour < 17 else 0 for h in hours],
+            "wind_speed_10m": [30.0 if i == 23 else 10.0 for i in range(72)],
+            "wind_gusts_10m": [55.0 if i == 23 else 20.0 for i in range(72)],
+            "wind_direction_10m": [225] * 72,
+            "precipitation": [1.4 if i in SNOWY else (0.5 if i == 50 else 0) for i in range(72)],
+            "snowfall": [1.0 if i in SNOWY else 0 for i in range(72)],
+        },
+        "daily": {
+            "time": ["2026-01-10", "2026-01-11", "2026-01-12"], "weather_code": [73, 71, 61],
+            "temperature_2m_max": [-1.6, -3.2, 1.4], "temperature_2m_min": [-9.1, -12.4, -4.0],
+            "precipitation_probability_max": [80, 85, 40], "uv_index_max": [1, 1, 1],
+            "precipitation_sum": [7, 3, 1],
+            "sunrise": ["2026-01-10T07:52", "2026-01-11T07:51", "2026-01-12T07:51"],
+            "sunset": ["2026-01-10T16:21", "2026-01-11T16:22", "2026-01-12T16:24"],
+        },
+    }, "aqi": 20}
+
+
+class AssistantToolTests(TestCase):
+    """The assistant's weather lookups, run the way the hub runs them (FakeBroker sessions)."""
+
+    def setUp(self):
+        from bdh_sdk import Stay, settings
+        from bdh_sdk.testing import FakeBroker
+
+        saved = settings._store
+        self.broker = FakeBroker(grants=("settings.get", "tools.*"), install=True, app_id="weather")
+        self.broker.start()
+        self.addCleanup(settings.set_store, saved)
+        self.addCleanup(self.broker.stop)
+        self.broker.stay = Stay(guest="Smith")  # a voice session during a stay is in guest mode
+        self.data = lodge_payload()
+        self.alerts = []
+        for target, kwargs in (
+                ("weather.assistant.fc.location", {"side_effect": lambda: self.where}),
+                ("weather.assistant.fc.get_weather", {"side_effect": lambda: self.data}),
+                ("weather.assistant.fc.place_name", {"return_value": "Sun Peaks"}),
+                ("weather.assistant.get_alerts", {"side_effect": lambda now: self.alerts}),
+                ("weather.assistant.default_units", {"return_value": "metric"}),
+                ("weather.assistant.utc_now", {"return_value": LODGE_NOW})):
+            patcher = patch(target, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.where = (50.88, -119.9)
+
+    def session(self, mode="guest"):
+        from bdh_sdk import tools as sdk_tools
+        from weather import assistant
+
+        self.broker.assistant_tools.clear()
+        for tool in assistant.tools(mode=mode):
+            self.broker.add_tool(tool, lambda args, t=tool.id: assistant.run_tool(t, args, mode=mode))
+        return sdk_tools.open_session()
+
+    def call(self, name, args=None):
+        from bdh_sdk import tools as sdk_tools
+        return sdk_tools.call_tool(self.session(), name, args)
+
+    def forecast(self, **args):
+        from weather.assistant import run_tool
+        return run_tool("weather_forecast", args)["forecast"]
+
+    def test_every_mode_gets_two_readonly_lookups(self):
+        from bdh_sdk import ALL_MODES
+        from weather import assistant
+        for mode in sorted(ALL_MODES):
+            with self.subTest(mode=mode):
+                tools = {t.id: t for t in assistant.tools(mode=mode)}
+                self.assertEqual(list(tools), ["current_weather", "weather_forecast"])
+                for tool in tools.values():
+                    self.assertEqual(tool.modes, ALL_MODES)
+                    self.assertTrue(tool.readonly)
+                    self.assertFalse(tool.confirm)
+                self.assertEqual(sorted(tools["weather_forecast"].params["properties"]), ["day", "days"])
+
+    def test_no_location_offers_nothing(self):
+        from weather import assistant
+        self.where = None
+        self.assertEqual(assistant.tools(mode="guest"), [])
+        with self.assertRaisesMessage(assistant.ToolError, assistant.NO_LOCATION):
+            assistant.run_tool("current_weather", {})
+
+    def test_hooks_serialise(self):
+        from bdh_sdk import hooks
+        from weather.plugin import spec
+        listed = hooks.run(spec, "tools", mode="guest")
+        self.assertEqual([t["id"] for t in listed], ["current_weather", "weather_forecast"])
+        self.assertEqual(listed[1]["modes"], ["dashboard", "guest", "owner"])
+        self.assertEqual(hooks.run(spec, "run_tool", tool_id="current_weather", args={}, mode="guest")["temp"],
+                         "-3°C")
+
+    def test_current_weather(self):
+        self.alerts = [{"title": "Snowfall warning", "end": datetime(2026, 1, 11, 18, 0, tzinfo=timezone.utc)}]
+        self.assertEqual(self.call("current_weather"), {"ok": True, "result": {
+            "place": "Sun Peaks", "as_of": "3:15 pm", "condition": "Overcast", "temp": "-3°C",
+            "feels_like": "-10°C", "wind": "14 km/h from the southwest, gusts 31", "humidity": "74%",
+            "today_high": "-2°C", "today_low": "-9°C", "next_sun": "sunset 4:21 pm",
+            "alerts": ["Snowfall warning until 11 am Sunday"],
+        }})
+
+    def test_tonight_uses_the_hours(self):
+        self.assertEqual(self.forecast(day="tonight"), [{
+            "when": "tonight (6 pm to 6 am)", "condition": "Snow", "high": "-4°C", "low": "-9°C",
+            "feels_like_low": "-15°C", "precip_chance": "80%", "precip": "7 cm snow", "snow_starts": "9 pm",
+            "wind": "30 km/h from the southwest, gusts 55",
+        }])
+
+    def test_days_default_to_three_and_stop_at_the_forecasts_end(self):
+        days = self.forecast()
+        self.assertEqual([d["when"] for d in days], ["today", "tomorrow", "Monday"])
+        # Today: the whole day's high and low, the snow still to come and when it starts.
+        self.assertEqual((days[0]["high"], days[0]["low"], days[0]["precip"], days[0]["snow_starts"]),
+                         ("-2°C", "-9°C", "3 cm snow", "9 pm"))
+        self.assertEqual(days[0]["condition"], "Overcast, snow at times")
+        self.assertEqual(days[1], {"when": "tomorrow", "condition": "Light snow", "high": "-3°C", "low": "-12°C",
+                                   "feels_like_low": "-15°C", "precip_chance": "85%", "precip": "4 cm snow",
+                                   "wind": "10 km/h from the southwest, gusts 20"})
+        self.assertEqual(days[2]["precip"], "under 1 mm rain")
+        self.assertEqual(len(self.forecast(days=7)), 3)
+        self.assertEqual([d["when"] for d in self.forecast(days=1)], ["today"])
+
+    def test_day_words(self):
+        cases = {
+            "tomorrow": "tomorrow", "Sunday": "tomorrow", "sat": "today", "2026-01-12": "Monday",
+            "Jan 11th": "tomorrow", "12 January": "Monday", "this afternoon": "this afternoon (3 pm to 6 pm)",
+            "tomorrow night": "tomorrow night (6 pm to 6 am)", "Monday morning": "Monday morning (6 am to noon)",
+            "in the evening": "this evening (6 pm to midnight)",
+        }
+        for day, when in cases.items():
+            with self.subTest(day=day):
+                self.assertEqual(self.forecast(day=day)[0]["when"], when)
+        self.assertEqual([d["when"] for d in self.forecast(day="this weekend")], ["today", "tomorrow"])
+
+    def test_days_it_cant_answer(self):
+        from weather.assistant import ToolError
+        for day, message in (("this morning", "This morning is already over."),
+                             ("Friday", "The forecast only goes as far as Monday."),
+                             ("Tuesday night", "The forecast only goes as far as Monday."),
+                             ("someday", "I can't tell which day 'someday' is")):
+            with self.subTest(day=day), self.assertRaisesMessage(ToolError, message):
+                self.forecast(day=day)
+
+    def test_bad_arguments_are_refused(self):
+        for args in ({"days": 0}, {"days": 8}, {"day": 3}, {"where": "peak"}):
+            with self.subTest(args=args):
+                answer = self.call("weather_forecast", args)
+                self.assertFalse(answer["ok"])
+                self.assertIn("invalid arguments", answer["error"])
+
+    def test_unavailable_and_stale_data(self):
+        from weather import assistant
+        self.data = None
+        self.assertEqual(self.call("current_weather"), {"ok": False, "error": assistant.UNAVAILABLE})
+        self.assertEqual(self.call("weather_forecast", {"day": "tonight"}),
+                         {"ok": False, "error": assistant.UNAVAILABLE})
+        self.data = lodge_payload()
+        self.data["forecast"]["current"]["time"] = "2026-01-10T09:00"
+        self.assertEqual(self.call("current_weather"), {"ok": False, "error": assistant.STALE})
+
+    def test_imperial(self):
+        from weather.assistant import run_tool
+        with patch("weather.assistant.default_units", return_value="imperial"):
+            now = run_tool("current_weather", {})
+            (tonight,) = self.forecast(day="tonight")
+        self.assertEqual((now["temp"], now["wind"]), ("26°F", "9 mph from the southwest, gusts 19"))
+        self.assertEqual(tonight["precip"], "2.8 in snow")
+

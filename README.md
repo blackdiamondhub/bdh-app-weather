@@ -29,6 +29,22 @@ changes what that visit shows.
 Preview a background with `?wx=` (`sun`, `stars`, `partly`, `clouds`, `fog`, `drizzle`, `rain`,
 `snow`, `storm`).
 
+## Assistant tools
+
+The hub's assistant (e.g. the voice app) can look up the weather through two read-only tools,
+offered in every mode (guest, dashboard and owner) and only while the hub has a location. The hub
+only offers them when `weather` is in its `assistant_apps` setting (Settings > Location > Assistant).
+
+| Tool | Params | Answers |
+|---|---|---|
+| `current_weather` | — | Temperature, feels-like, condition, wind, humidity, today's high/low, next sunrise or sunset, air quality when it isn't good, active alerts |
+| `weather_forecast` | `day` (today, tonight, this afternoon, tomorrow night, a weekday, weekend, a date) or `days` (1–7, default 3) | Per day or part of a day: condition, high/low, feels-like low, chance of precipitation, snow/rain amount ("7 cm snow", or "none") and when snow starts, peak wind and gusts |
+
+Answers are small dicts of speech-ready strings in the hub's units, with times in the forecast
+location's local time ("9 pm"). Parts of a day (morning 6–12, afternoon 12–18, evening 18–24,
+night 18–6) come from the hourly forecast. When Open-Meteo can't be reached, the forecast is more
+than 3 hours old, or the hub has no location, the tool fails with a short sentence the assistant
+can say.
 ## Container (hub API 2)
 
 Since 2.0.0 the app runs in its own container: no broker permissions (it reads only its own
